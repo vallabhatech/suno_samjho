@@ -37,19 +37,6 @@ Our goal is simple: **make mental health support affordable, accessible, and sti
 
 ---
 
-## 📱 App Flow
-
-```mermaid
-flowchart TD
-    A[Splash Screen] --> B[Onboarding Pages]
-    B --> C[Login / SignUp (Supabase)]
-    C --> D[Main Dashboard]
-    D --> E[AI Chatbot]
-    D --> F[Info & Resources]
-    D --> G[Profile & Settings]
-```
-
----
 
 ## 📸 Screenshots *(Coming Soon)*  
 
