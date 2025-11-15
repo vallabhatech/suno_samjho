@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'signup_screen.dart';
+import '../home/main_page.dart';
 
 class LoginScreen extends StatelessWidget {
   const LoginScreen({super.key});
@@ -75,7 +76,11 @@ class LoginScreen extends StatelessWidget {
                     backgroundColor: const Color(0xFF1E242E),
                     foregroundColor: const Color(0xFFD4D4D4),
                   ),
-                  onPressed: () {},
+                  onPressed: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(builder: (_) => const DashboardPage()),
+                    );
+                  },
                   child: Text(
                     'Login',
                     style: TextStyle(
