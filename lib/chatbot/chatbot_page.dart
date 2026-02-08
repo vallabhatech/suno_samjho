@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../services/speech_service.dart';
 
 class ChatbotPage extends StatefulWidget {
   const ChatbotPage({super.key});
@@ -19,6 +20,66 @@ class _ChatbotPageState extends State<ChatbotPage> {
 
   final TextEditingController _controller = TextEditingController();
   final ScrollController _scrollController = ScrollController();
+
+  // Speech-to-text
+  final SpeechService _speechService = SpeechService();
+  bool _isListening = false;
+  bool _speechAvailable = false;
+  String? _speechLocale;
+
+  @override
+  void initState() {
+    super.initState();
+    _initSpeech();
+  }
+
+  Future<void> _initSpeech() async {
+    _speechAvailable = await _speechService.initialize();
+    if (_speechAvailable) {
+      _speechLocale = await _speechService.getSystemLocale();
+    }
+    setState(() {});
+  }
+
+  Future<void> _toggleListening() async {
+    if (!_speechAvailable) {
+      _showSnackBar('Speech recognition not available on this device');
+      return;
+    }
+
+    if (_isListening) {
+      await _speechService.stopListening();
+      setState(() => _isListening = false);
+    } else {
+      setState(() => _isListening = true);
+      await _speechService.startListening(
+        onResult: (text, isFinal) {
+          setState(() {
+            _controller.text = text;
+            _controller.selection = TextSelection.fromPosition(
+              TextPosition(offset: _controller.text.length),
+            );
+          });
+          if (isFinal) {
+            setState(() => _isListening = false);
+          }
+        },
+        onListeningStateChanged: (listening) {
+          setState(() => _isListening = listening);
+        },
+        localeId: _speechLocale,
+      );
+    }
+  }
+
+  void _showSnackBar(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        duration: const Duration(seconds: 3),
+      ),
+    );
+  }
 
   ThemeData get _lightTheme => ThemeData(
     brightness: Brightness.light,
@@ -302,9 +363,23 @@ class _ChatbotPageState extends State<ChatbotPage> {
             ),
           ),
           const SizedBox(width: 8),
-          IconButton(
-            icon: Icon(Icons.mic, color: theme.primaryColor),
-            onPressed: () {},
+          GestureDetector(
+            onTap: _toggleListening,
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: _isListening
+                    ? Colors.red.withOpacity(0.15)
+                    : Colors.transparent,
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                _isListening ? Icons.mic : Icons.mic_none,
+                color: _isListening ? Colors.red : theme.primaryColor,
+                size: 26,
+              ),
+            ),
           ),
         ],
       ),
