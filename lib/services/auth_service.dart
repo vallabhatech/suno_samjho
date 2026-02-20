@@ -1,7 +1,9 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
+import '../utils/auth_error_handler.dart';
 
 class AuthService {
+
   AuthService._();
   static final instance = AuthService._();
 
@@ -12,13 +14,27 @@ class AuthService {
     required String password,
     String? name,
   }) async {
-    final response = await client.auth.signUp(
-      email: email,
-      password: password,
-      data: name != null ? {'name': name} : null,
-    );
-    return response;
+    try {
+      final response = await client.auth.signUp(
+        email: email,
+        password: password,
+        data: name != null ? {'name': name} : null,
+      );
+      return response;
+    } on AuthException catch (e) {
+      // Log for debugging but throw user-friendly message
+      print('AuthException during signUp: ${e.message}, code: ${e.statusCode}');
+      final friendlyMessage = AuthErrorHandler.getErrorMessage(
+        e.statusCode?.toString() ?? e.message,
+        message: e.message,
+      );
+      throw Exception(friendlyMessage);
+    } catch (e) {
+      print('Unexpected error during sign up: $e');
+      throw Exception('Unable to create account. Please check your connection and try again.');
+    }
   }
+
 
   Future<AuthResponse> signIn({
     required String email,
@@ -33,19 +49,19 @@ class AuthService {
     } on AuthException catch (e) {
       // Log full error for debugging
       print('AuthException: ${e.message}, statusCode: ${e.statusCode}');
-      final msg = e.message.toLowerCase();
-      if (msg.contains('invalid') ||
-          msg.contains('credential') ||
-          msg.contains('password') ||
-          msg.contains('email not confirmed')) {
-        throw Exception('INVALID_CREDENTIALS');
-      }
-      throw Exception(e.message);
+      
+      // Map to user-friendly error message
+      final friendlyMessage = AuthErrorHandler.getErrorMessage(
+        e.statusCode?.toString() ?? 'unknown',
+        message: e.message,
+      );
+      throw Exception(friendlyMessage);
     } catch (e) {
       print('Unexpected error during sign in: $e');
-      rethrow;
+      throw Exception('Unable to sign in. Please check your connection and try again.');
     }
   }
+
 
   Future<void> signInWithGoogle({String? redirectTo}) async {
     try {
@@ -56,9 +72,17 @@ class AuthService {
         scopes: 'email profile',
       );
     } on AuthException catch (e) {
-      throw Exception(e.message);
+      final friendlyMessage = AuthErrorHandler.getErrorMessage(
+        e.statusCode?.toString() ?? 'unknown',
+        message: e.message,
+      );
+      throw Exception(friendlyMessage);
+    } catch (e) {
+      print('Unexpected error during Google sign in: $e');
+      throw Exception('Unable to sign in with Google. Please try again.');
     }
   }
+
 
   Future<void> signInWithApple({String? redirectTo}) async {
     try {
@@ -69,9 +93,17 @@ class AuthService {
         scopes: 'name email',
       );
     } on AuthException catch (e) {
-      throw Exception(e.message);
+      final friendlyMessage = AuthErrorHandler.getErrorMessage(
+        e.statusCode?.toString() ?? 'unknown',
+        message: e.message,
+      );
+      throw Exception(friendlyMessage);
+    } catch (e) {
+      print('Unexpected error during Apple sign in: $e');
+      throw Exception('Unable to sign in with Apple. Please try again.');
     }
   }
+
 
   Future<void> signOut() async {
     await client.auth.signOut();

@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import '../home/main_page.dart';
 import '../services/auth_service.dart';
+import '../utils/input_validator.dart';
+import '../utils/auth_error_handler.dart';
+
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -11,36 +14,127 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
+  final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
   bool _loading = false;
   String? _error;
   bool _showSignUp = false;
+  bool _obscurePassword = true;
+  bool _obscureConfirmPassword = true;
+  
+  // Field-specific errors for real-time validation
+  String? _emailError;
+  String? _passwordError;
+  String? _confirmPasswordError;
+
+  @override
+  void initState() {
+    super.initState();
+    // Add listeners for real-time validation
+    _emailController.addListener(_validateEmail);
+    _passwordController.addListener(_validatePassword);
+    _confirmPasswordController.addListener(_validateConfirmPassword);
+  }
+  
+  void _validateEmail() {
+    if (_emailController.text.isNotEmpty) {
+      setState(() {
+        _emailError = InputValidator.validateEmail(_emailController.text);
+      });
+    } else {
+      setState(() => _emailError = null);
+    }
+  }
+  
+  void _validatePassword() {
+    if (_passwordController.text.isNotEmpty) {
+      setState(() {
+        _passwordError = InputValidator.validatePassword(_passwordController.text);
+      });
+    } else {
+      setState(() => _passwordError = null);
+    }
+    // Also validate confirm password if it has content
+    if (_confirmPasswordController.text.isNotEmpty) {
+      _validateConfirmPassword();
+    }
+  }
+  
+  void _validateConfirmPassword() {
+    if (_confirmPasswordController.text.isNotEmpty) {
+      setState(() {
+        _confirmPasswordError = InputValidator.validateConfirmPassword(
+          _passwordController.text,
+          _confirmPasswordController.text,
+        );
+      });
+    } else {
+      setState(() => _confirmPasswordError = null);
+    }
+  }
+
 
   @override
   void dispose() {
+    _emailController.removeListener(_validateEmail);
+    _passwordController.removeListener(_validatePassword);
+    _confirmPasswordController.removeListener(_validateConfirmPassword);
     _emailController.dispose();
     _passwordController.dispose();
     _confirmPasswordController.dispose();
     super.dispose();
   }
 
+
   Future<void> _handleAuth() async {
+    // Clear previous errors
     setState(() {
       _loading = true;
       _error = null;
+      _emailError = null;
+      _passwordError = null;
+      _confirmPasswordError = null;
     });
-    try {
-      final email = _emailController.text.trim();
-      final password = _passwordController.text;
-      if (email.isEmpty || password.isEmpty) {
-        throw Exception('Email & password required');
+    
+    // Validate all fields
+    final email = _emailController.text.trim();
+    final password = _passwordController.text;
+    final confirmPassword = _confirmPasswordController.text;
+    
+    bool hasError = false;
+    
+    // Email validation
+    final emailError = InputValidator.validateEmail(email);
+    if (emailError != null) {
+      setState(() => _emailError = emailError);
+      hasError = true;
+    }
+    
+    // Password validation
+    final passwordError = InputValidator.validatePassword(password);
+    if (passwordError != null) {
+      setState(() => _passwordError = passwordError);
+      hasError = true;
+    }
+    
+    // Confirm password validation (only for signup)
+    if (_showSignUp) {
+      final confirmError = InputValidator.validateConfirmPassword(password, confirmPassword);
+      if (confirmError != null) {
+        setState(() => _confirmPasswordError = confirmError);
+        hasError = true;
       }
+    }
+    
+    if (hasError) {
+      setState(() => _loading = false);
+      return;
+    }
+    
+    try {
       if (_showSignUp) {
-        if (_confirmPasswordController.text != password) {
-          throw Exception('Passwords do not match');
-        }
         await AuthService.instance.signUp(email: email, password: password);
       } else {
         await AuthService.instance.signIn(email: email, password: password);
@@ -53,23 +147,14 @@ class _LoginScreenState extends State<LoginScreen> {
       }
     } catch (e) {
       print('Login error caught: $e'); // Debug log
-      final raw = e.toString();
-      String message;
-      if (raw.contains('INVALID_CREDENTIALS')) {
-        message = 'Email or password incorrect';
-      } else if (raw.contains('Passwords do not match')) {
-        message = 'Passwords do not match';
-      } else if (raw.contains('Email & password required')) {
-        message = 'Email & password required';
-      } else {
-        // Show actual error during development to help debug
-        message = 'Authentication failed: ${raw.replaceAll('Exception: ', '')}';
-      }
+      // Error message is already user-friendly from AuthService
+      final message = e.toString().replaceAll('Exception: ', '');
       setState(() => _error = message);
     } finally {
       if (mounted) setState(() => _loading = false);
     }
   }
+
 
   Future<void> _handleGoogleOAuth() async {
     setState(() {
@@ -148,6 +233,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   false,
                   isSmallScreen,
                   controller: _emailController,
+                  errorText: _emailError,
                 ),
                 const SizedBox(height: 12),
                 _buildTextField(
@@ -155,6 +241,10 @@ class _LoginScreenState extends State<LoginScreen> {
                   true,
                   isSmallScreen,
                   controller: _passwordController,
+                  errorText: _passwordError,
+                  isPassword: true,
+                  obscureText: _obscurePassword,
+                  onToggleVisibility: () => setState(() => _obscurePassword = !_obscurePassword),
                 ),
                 if (_showSignUp) ...[
                   const SizedBox(height: 12),
@@ -163,15 +253,39 @@ class _LoginScreenState extends State<LoginScreen> {
                     true,
                     isSmallScreen,
                     controller: _confirmPasswordController,
+                    errorText: _confirmPasswordError,
+                    isPassword: true,
+                    obscureText: _obscureConfirmPassword,
+                    onToggleVisibility: () => setState(() => _obscureConfirmPassword = !_obscureConfirmPassword),
                   ),
                 ],
                 if (_error != null) ...[
-                  const SizedBox(height: 8),
-                  Text(
-                    _error!,
-                    style: const TextStyle(color: Colors.red, fontSize: 13),
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.red.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.red.shade200),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.error_outline, color: Colors.red.shade700, size: 20),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            _error!,
+                            style: TextStyle(
+                              color: Colors.red.shade700,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ],
+
                 const SizedBox(height: 8),
                 if (!_showSignUp)
                   Row(
@@ -303,39 +417,89 @@ class _LoginScreenState extends State<LoginScreen> {
     bool isPassword,
     bool isSmallScreen, {
     required TextEditingController controller,
+    String? errorText,
+    bool obscureText = false,
+    VoidCallback? onToggleVisibility,
   }) {
     String? iconAsset;
     if (label == 'Email') {
       iconAsset = 'assets/mail.svg';
-    } else if (label == 'Password') {
+    } else if (label.contains('Password')) {
       iconAsset = 'assets/password.svg';
     }
-    return TextField(
-      obscureText: isPassword,
-      controller: controller,
-      decoration: InputDecoration(
-        labelText: label,
-        labelStyle: TextStyle(
-          color: const Color(0xFF040607),
-          fontSize: isSmallScreen ? 18 : 24,
-          fontFamily: 'Inter',
-          fontWeight: FontWeight.w400,
+    
+    final hasError = errorText != null;
+    
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        TextField(
+          obscureText: obscureText,
+          controller: controller,
+          decoration: InputDecoration(
+            labelText: label,
+            labelStyle: TextStyle(
+              color: const Color(0xFF040607),
+              fontSize: isSmallScreen ? 18 : 24,
+              fontFamily: 'Inter',
+              fontWeight: FontWeight.w400,
+            ),
+            filled: true,
+            fillColor: const Color(0xFFD9D9D9).withOpacity(0.15),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(10),
+              borderSide: BorderSide(
+                color: hasError ? Colors.red.shade400 : const Color(0xFFD9D9D9),
+              ),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(10),
+              borderSide: BorderSide(
+                color: hasError ? Colors.red.shade400 : const Color(0xFFD9D9D9),
+              ),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(10),
+              borderSide: BorderSide(
+                color: hasError ? Colors.red.shade600 : const Color(0xFF4A90E2),
+                width: 2,
+              ),
+            ),
+            prefixIcon: iconAsset != null
+                ? Padding(
+                    padding: const EdgeInsets.all(12.0),
+                    child: SvgPicture.asset(iconAsset, width: 24, height: 24),
+                  )
+                : null,
+            suffixIcon: onToggleVisibility != null
+                ? IconButton(
+                    icon: Icon(
+                      obscureText ? Icons.visibility_off : Icons.visibility,
+                      color: Colors.grey.shade600,
+                    ),
+                    onPressed: onToggleVisibility,
+                  )
+                : null,
+            errorText: null, // We show error below instead
+          ),
         ),
-        filled: true,
-        fillColor: const Color(0xFFD9D9D9).withOpacity(0.15),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(10),
-          borderSide: const BorderSide(color: Color(0xFFD9D9D9)),
-        ),
-        prefixIcon: iconAsset != null
-            ? Padding(
-                padding: const EdgeInsets.all(12.0),
-                child: SvgPicture.asset(iconAsset, width: 24, height: 24),
-              )
-            : null,
-      ),
+        if (hasError) ...[
+          const SizedBox(height: 4),
+          Padding(
+            padding: const EdgeInsets.only(left: 12),
+            child: Text(
+              errorText,
+              style: TextStyle(
+                color: Colors.red.shade600,
+                fontSize: 12,
+              ),
+            ),
+          ),
+        ],
+      ],
     );
   }
+
 
   Widget _buildSocialButton(
     String text,
